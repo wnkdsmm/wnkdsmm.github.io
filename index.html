@@ -178,4 +178,10 @@
         <p class="footer-text">Ut at molestie nibh. </p>
     </footer>
 </body>
+<script>
+// Регистрируем service worker
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('sw.js');
+}
+</script>
 </html>
