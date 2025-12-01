@@ -1,6 +1,6 @@
 {
-  "name": "Lorem Ipsum",
-  "short_name": "HackerWeb",
+  "name": "Lorem Ipsum Dolor",
+  "short_name": "Lorem Ipsum",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#fff",
