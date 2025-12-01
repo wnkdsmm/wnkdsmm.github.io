@@ -12,84 +12,77 @@ const STATIC_ASSETS = [
   '/icon-512.png'
 ];
 
+// --- ДОБАВЛЕНО: функция сетевого запроса с таймаутом ---
+function fromNetwork(request, timeout) {
+  return new Promise((resolve, reject) => {
+    const timeoutId = setTimeout(() => reject(new Error('timeout')), timeout);
+
+    fetch(request).then(response => {
+      clearTimeout(timeoutId);
+      resolve(response);
+    }, reject);
+  });
+}
+
+// --- ДОБАВЛЕНО: получение из кэша (fallback) ---
+function fromCache(request) {
+  return caches.open(CACHE_NAME)
+    .then(cache => cache.match(request))
+    .then(matching => matching || Promise.reject('no-match'));
+}
+
 // Установка Service Worker
 self.addEventListener('install', (event) => {
-  console.log('Service Worker: Installing...');
-  
   event.waitUntil(
     caches.open(CACHE_NAME)
-      .then((cache) => {
-        console.log('Service Worker: Caching static assets');
-        return cache.addAll(STATIC_ASSETS);
-      })
-      .then(() => {
-        console.log('Service Worker: Installed');
-        return self.skipWaiting();
-      })
+      .then(cache => cache.addAll(STATIC_ASSETS))
+      .then(() => self.skipWaiting())
   );
 });
 
 // Активация Service Worker
 self.addEventListener('activate', (event) => {
-  console.log('Service Worker: Activating...');
-  
   event.waitUntil(
-    caches.keys().then((cacheNames) => {
+    caches.keys().then(cacheNames => {
       return Promise.all(
         cacheNames.map((cacheName) => {
           if (cacheName !== CACHE_NAME) {
-            console.log('Service Worker: Deleting old cache', cacheName);
             return caches.delete(cacheName);
           }
         })
       );
-    }).then(() => {
-      console.log('Service Worker: Activated');
-      return self.clients.claim();
-    })
+    }).then(() => self.clients.claim())
   );
 });
 
 // Обработка fetch запросов
 self.addEventListener('fetch', (event) => {
-  // Пропускаем не-GET запросы
   if (event.request.method !== 'GET') return;
-  
-  // Пропускаем запросы chrome-extension://
   if (event.request.url.indexOf('chrome-extension://') === 0) return;
-  
+
+  // --- ДОБАВЛЕНО: схема "сетевой запрос с таймаутом → кэш" ---
   event.respondWith(
-    // Сначала пытаемся получить ресурс из сети
-    fetch(event.request)
+    fromNetwork(event.request, TIMEOUT)
       .then((response) => {
-        // Если запрос успешен, кэшируем ответ
+        // Кэшируем успешный ответ
         const responseClone = response.clone();
-        caches.open(CACHE_NAME)
-          .then((cache) => {
-            cache.put(event.request, responseClone);
-          });
+        caches.open(CACHE_NAME).then(cache => cache.put(event.request, responseClone));
         return response;
       })
       .catch(() => {
-        // Если сеть недоступна, ищем в кэше
-        return caches.match(event.request)
-          .then((cachedResponse) => {
-            if (cachedResponse) {
-              return cachedResponse;
-            }
-            
-            // Если это HTML запрос, показываем offline страницу
+        // Если сеть недоступна — ищем в кэше
+        return fromCache(event.request)
+          .catch(() => {
+            // Если это HTML — выдаём offline.html
             if (event.request.headers.get('accept').includes('text/html')) {
               return caches.match(OFFLINE_URL);
             }
-            
-            // Для других типов запросов возвращаем fallback
+
+            // Иначе fallback
             return new Response('Offline', {
               status: 503,
               statusText: 'Service Unavailable',
-              headers: new Headers({
-                'Content-Type': 'text/plain'
-              })
+              headers: { 'Content-Type': 'text/plain' }
             });
           });
       })
